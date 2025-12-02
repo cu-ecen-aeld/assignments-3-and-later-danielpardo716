@@ -46,21 +46,21 @@ bool do_exec(int count, ...)
     int pid = fork();
     if (pid < 0)
     {
-	// Fork failed
-	return false;
+        // Fork failed
+        return false;
     }
     else if (pid == 0)
     {
-	// Run child process - should not return
-	int result = execv(command[0], command);
-	if (result < 0) return false;
+        // Run child process - should not return
+        int result = execv(command[0], command);
+        exit(result);
     }
 
     // Parent process - wait for child process to exit
     int status;
     if (waitpid(pid, &status, 0) == -1)
     {
-	return false;
+	    return false;
     }
 
     va_end(args);
@@ -90,25 +90,32 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
     if (fd < 0) return false;
 
-    int pid;
-    switch (pid = fork())
+    // Fork child process
+    int pid = fork();
+    if (pid < 0)
     {
-	case -1: return false;
-	case 0:
-	{
-    	    if (dup2(fd, 1) < 0) return false;
-    	    close(fd);
-    	    execvp(command[0], &command[1]);
+        // Fork failed
+        return false;
+    }
+    else if (pid == 0)
+    {
+        // Child process - close file using duplicated fd and execute command
+        if (dup2(fd, 1) < 0) return false;
+        close(fd);
+        int result = execvp(command[0], command);
+        exit(result);
+    }
+
+    // Parent process - close file and wait for child process to exit
+    close(fd);
+    int status;
+    if (waitpid(pid, &status, 0) == -1)
+    {
 	    return false;
-	}
-	default:
-	{
-    	    close(fd);
-            execv(command[0], &command[1]);
-	}
     }
 
     va_end(args);
 
-    return true;
+    // Check if child returned normally
+    return ((WIFEXITED(status) && WEXITSTATUS(status)) == 0);
 }
