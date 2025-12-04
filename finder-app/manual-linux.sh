@@ -12,7 +12,6 @@ BUSYBOX_VERSION=1_33_1
 FINDER_APP_DIR=$(realpath $(dirname $0))
 ARCH=arm64
 CROSS_COMPILE=aarch64-none-linux-gnu-
-FINDER_APP_DIR=$(pwd)
 
 if [ $# -lt 1 ]
 then
@@ -36,16 +35,14 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     git checkout ${KERNEL_VERSION}
 
     # Build the kernel
-    #make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper    # Deep clean
-    #make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig   # Configure default config for "virt"
-    #make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all     # Build kernel image
-    #make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules     # Build kernel modules
-    #make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs        # Build device tree
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper    # Deep clean
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig   # Configure default config for "virt"
+    make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all     # Build kernel image
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs        # Build device tree
 fi
 
 echo "Adding the Image in outdir"
 cd "$OUTDIR"
-pwd
 cp linux-stable/arch/${ARCH}/boot/Image Image
 
 echo "Creating the staging directory for the root filesystem"
@@ -69,17 +66,18 @@ then
     git clone git://busybox.net/busybox.git
     cd busybox
     git checkout ${BUSYBOX_VERSION}
-    # TODO:  Configure busybox
+
+    # Configure busybox
+    make distclean
+    make defconfig
 else
     cd busybox
 fi
 
 # Make and install busybox
 echo "Making and installing busybox"
-#make distclean
-#make defconfig
-#make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
-#make CONFIG_PREFIX=bin ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
+make CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
 
 echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a busybox | grep "program interpreter"
@@ -96,15 +94,6 @@ cp ${SYSROOT}/lib64/libc.so.6 lib64/libc.so.6
 
 # Make device nodes
 echo "Creating device nodes"
-if [ -e dev/null ]
-then
-    sudo rm dev/null
-fi
-if [ -e dev/console ]
-then
-    sudo rm dev/console
-fi
-
 sudo mknod -m 666 dev/null c 1 3
 sudo mknod -m 666 dev/console c 5 1
 
@@ -117,19 +106,19 @@ make CROSS_COMPILE=${CROSS_COMPILE}
 # Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
 echo "Copying finder scripts/executables"
+cp autorun-qemu.sh ${OUTDIR}/rootfs/home/autorun-qemu.sh
 cp writer ${OUTDIR}/rootfs/home/writer
 cp finder.sh ${OUTDIR}/rootfs/home/finder.sh
+cp finder-test.sh ${OUTDIR}/rootfs/home/finder-test.sh
 cp ../conf/username.txt ${OUTDIR}/rootfs/home/conf/username.txt
 cp ../conf/assignment.txt ${OUTDIR}/rootfs/home/conf/assignment.txt
-cp finder-test.sh ${OUTDIR}/rootfs/home/finder-test.sh
-cp autorun-qemu.sh ${OUTDIR}/rootfs/home/autorun-qemu.sh
 
 # Chown the root directory
 cd "$OUTDIR"
-sudo chown root:root rootfs
+sudo chown -R root:root rootfs
 
 # Create initramfs.cpio.gz
-cd "$OUTDIR/rootfs"
+cd rootfs
 find . | cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
 cd "$OUTDIR"
 gzip -f initramfs.cpio

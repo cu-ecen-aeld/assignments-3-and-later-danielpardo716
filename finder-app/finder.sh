@@ -1,3 +1,5 @@
+#!/bin/sh
+
 # Ensure filesdir exists
 if [ -z $1 ]
 then
