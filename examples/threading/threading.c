@@ -1,3 +1,4 @@
+
 #include "threading.h"
 #include <unistd.h>
 #include <stdlib.h>
@@ -8,7 +9,7 @@
 //#define DEBUG_LOG(msg,...) printf("threading: " msg "\n" , ##__VA_ARGS__)
 #define ERROR_LOG(msg,...) printf("threading ERROR: " msg "\n" , ##__VA_ARGS__)
 
-#define MILLISECONDS_TO_MICROSECONDS (100)
+#define MILLISECONDS_TO_MICROSECONDS (1000)
 
 void* threadfunc(void* thread_param)
 {
