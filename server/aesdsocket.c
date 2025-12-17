@@ -12,7 +12,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 
-#define BUFFER_MAX_LENGTH   1024
+#define BUFFER_MAX_LENGTH   81920                       // TODO: determine how to reduce size using dynamic allocation
 #define LISTEN_BACKLOG      10
 #define SERVER_PORT         "9000"
 #define FILE_PATH           "/var/tmp/aesdsocketdata"
@@ -51,110 +51,6 @@ static void signal_handler(int signal_number)
         cleanup_and_exit(0);
     }
 }
-
-static void process_data()
-{
-    // Open file to append to
-    if ((file_ptr = fopen(FILE_PATH, "a+")) == NULL)
-    {
-        syslog(LOG_ERR, "Unable to open "FILE_PATH" , %s", strerror(errno));
-        cleanup_and_exit(-1);
-    }
-
-    char buffer[BUFFER_MAX_LENGTH];
-    char line_buffer[BUFFER_MAX_LENGTH];
-    size_t line_len = 0;
-    ssize_t bytes_received = 0;
-    while ((bytes_received = recv(client_fd, buffer, sizeof(buffer), 0)) > 0)
-    {   
-        // Check for receiving errors
-        if (bytes_received < 0)
-        {
-            syslog(LOG_ERR, "Failed to receive any bytes: %s", strerror(errno));
-            cleanup_and_exit(-1);
-        }
-
-        // Scan for newlines and append to file
-        for (int i = 0; i < bytes_received; ++i)
-        {
-            // Copy bytes to file line buffer
-            if (line_len < (BUFFER_MAX_LENGTH - 1))
-            {
-                line_buffer[line_len] = buffer[i];
-                ++line_len;
-            }
-
-            if (buffer[i] == '\n')
-            {
-                // If newline received, append to file
-                // syslog(LOG_INFO, "Received string %s", line_buffer);
-                if (fwrite(line_buffer, 1, line_len, file_ptr) != line_len)
-                {
-                    syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
-                    cleanup_and_exit(-1);
-                }
-                fflush(file_ptr);
-
-                // Read file and send to client
-                // syslog(LOG_INFO, "Reading file");
-                rewind(file_ptr);
-                while (fgets(buffer, sizeof(buffer), file_ptr))
-                {
-                    size_t len = strlen(buffer);
-                    ssize_t bytes_sent = 0;
-                    // syslog(LOG_INFO, "Sending string %s with length %ld", buffer, len);
-                    
-                    while (bytes_sent < (ssize_t)len)
-                    {
-                        ssize_t n = send(client_fd, (buffer + bytes_sent), (len - bytes_sent), 0);
-                        // syslog(LOG_INFO, "Sent %ld bytes", n);
-                        if (n <= 0)
-                        {
-                            syslog(LOG_ERR, "Failed to send any bytes: %s", strerror(errno));
-                            cleanup_and_exit(-1);
-                        }
-                        bytes_sent += n;
-                    }
-                }
-                syslog(LOG_INFO, "Done sending file");
-                fclose(file_ptr);
-                file_ptr = NULL;
-                return;
-            }
-        }
-    }
-}
-
-// static void send_data()
-// {
-//     // char send_buffer[] = "1234\n";
-//     // ssize_t num_bytes = send(client_fd, (send_buffer), sizeof(send_buffer), 0);
-//     // syslog(LOG_INFO, "Sent %ld bytes: %s", num_bytes, send_buffer);
-
-//     char send_buffer[BUFFER_MAX_LENGTH];
-//     rewind(file_ptr);                           // Go to start of file
-//     syslog(LOG_INFO, "Reading file");
-     
-//     while (fgets(send_buffer, sizeof(send_buffer), file_ptr))
-//     {
-//         size_t len = strlen(send_buffer);
-//         ssize_t sent_bytes = 0;
-//         syslog(LOG_INFO, "Sending string %s with length %ld", send_buffer, len);
-        
-//         while (sent_bytes < (ssize_t)len)
-//         {
-//             ssize_t n = send(client_fd, (send_buffer + sent_bytes), (len - sent_bytes), 0);
-//             syslog(LOG_INFO, "Sent %ld bytes", n);
-//             if (n <= 0)
-//             {
-//                 syslog(LOG_ERR, "Failed to send any bytes: %s", strerror(errno));
-//                 cleanup_and_exit(-1);
-//             }
-//             sent_bytes += n;
-//         }
-//     }
-//     syslog(LOG_INFO, "Done sending file");
-// }
 
 static void init_signal_handler(struct sigaction* signal_ptr)
 {
@@ -215,6 +111,74 @@ static void init_socket()
 
     // Free server_addr since we are done with it
     freeaddrinfo(server_addr);
+}
+
+static void process_data()
+{
+    // Open file to append to
+    if ((file_ptr = fopen(FILE_PATH, "a+")) == NULL)
+    {
+        syslog(LOG_ERR, "Unable to open "FILE_PATH" , %s", strerror(errno));
+        cleanup_and_exit(-1);
+    }
+
+    char buffer[BUFFER_MAX_LENGTH];
+    char line_buffer[BUFFER_MAX_LENGTH];
+    size_t line_len = 0;
+    ssize_t bytes_received = 0;
+    while ((bytes_received = recv(client_fd, buffer, sizeof(buffer), 0)) > 0)
+    {   
+        // Check for receiving errors
+        if (bytes_received < 0)
+        {
+            syslog(LOG_ERR, "Failed to receive any bytes: %s", strerror(errno));
+            cleanup_and_exit(-1);
+        }
+
+        // Scan for newlines and append to file
+        for (int i = 0; i < bytes_received; ++i)
+        {
+            // Copy bytes to file line buffer
+            if (line_len < (BUFFER_MAX_LENGTH - 1))
+            {
+                line_buffer[line_len] = buffer[i];
+                ++line_len;
+            }
+
+            if (buffer[i] == '\n')
+            {
+                // If newline received, append to file
+                if (fwrite(line_buffer, 1, line_len, file_ptr) != line_len)
+                {
+                    syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
+                    cleanup_and_exit(-1);
+                }
+                fflush(file_ptr);
+
+                // Read file and send to client
+                rewind(file_ptr);
+                while (fgets(buffer, sizeof(buffer), file_ptr))
+                {
+                    size_t len = strlen(buffer);
+                    ssize_t bytes_sent = 0;                    
+                    while (bytes_sent < (ssize_t)len)
+                    {
+                        ssize_t n = send(client_fd, (buffer + bytes_sent), (len - bytes_sent), 0);
+                        if (n <= 0)
+                        {
+                            syslog(LOG_ERR, "Failed to send any bytes: %s", strerror(errno));
+                            cleanup_and_exit(-1);
+                        }
+                        bytes_sent += n;
+                    }
+                }
+                syslog(LOG_INFO, "Done sending file");
+                fclose(file_ptr);
+                file_ptr = NULL;
+                return;
+            }
+        }
+    }
 }
 
 int main(int argc, char* argv[])
