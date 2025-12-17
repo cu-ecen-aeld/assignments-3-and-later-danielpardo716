@@ -13,6 +13,7 @@
 #include <arpa/inet.h>
 
 #define BUFFER_MAX_LENGTH   1024
+#define LISTEN_BACKLOG      10
 #define FILE_PATH           "/var/tmp/aesdsocketdata"
 
 static FILE* file_ptr = NULL;
@@ -37,8 +38,7 @@ static void cleanup_and_exit(int exit_code)
     }
     if (remove(FILE_PATH) < 0)
     {
-        syslog(LOG_ERR, "Failed to remove "FILE_PATH": errno %d", errno);
-        exit(-1);
+        syslog(LOG_ERR, "Failed to remove "FILE_PATH": %s", strerror(errno));
     }
     
     closelog();
@@ -52,48 +52,6 @@ static void signal_handler(int signal_number)
         syslog(LOG_INFO, "Caught signal %d, exiting", signal_number);
         cleanup_and_exit(0);
     }
-}
-
-static void start_daemon()
-{
-    int pid = fork();
-    if (pid < 0)
-    {
-        syslog(LOG_ERR, "Failed to create child process: errno %d", errno);
-        cleanup_and_exit(-1);
-    }
-    else if (pid == 0)
-    {
-        // Exit parent process
-        cleanup_and_exit(0);
-    }
-    
-    // Create a new session (ensure no controlling tty)
-    if (setsid() < 0)
-    {
-        syslog(LOG_ERR, "Failed to create new session: errno %d", errno);
-    };
-
-    // Change working dir
-    chdir("/");
-
-    // Close any open file descriptors
-    for (int fd = sysconf(_SC_OPEN_MAX); fd >= 0; --fd)
-    {
-        close(fd);
-    }
-    
-    // Redirect stdin, stdout, and stderr to /dev/null
-    int fd = open("/dev/null", O_RDWR);
-    if (fd < 0)
-    {
-        syslog(LOG_ERR, "Unable to open /dev/null: errno %d", errno);
-        cleanup_and_exit(-1);
-    }
-    dup2(fd, STDIN_FILENO);
-    dup2(fd, STDOUT_FILENO);
-    dup2(fd, STDERR_FILENO);
-    close(fd);
 }
 
 static void receive_data()
@@ -110,9 +68,10 @@ static void receive_data()
         {
             if (recv_buffer[i] == '\n')
             {
+                syslog(LOG_INFO, "Received string %s", line_buffer);
                 if (fwrite(line_buffer, 1, line_len, file_ptr) != line_len)
                 {
-                    syslog(LOG_ERR, "Failed to write to file: errno %d", errno);
+                    syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
                     cleanup_and_exit(-1);
                 }
                 fflush(file_ptr);
@@ -130,7 +89,7 @@ static void receive_data()
 
     if (bytes_received < 0)
     {
-        syslog(LOG_ERR, "Failed to receive any bytes: errno %d", errno);
+        syslog(LOG_ERR, "Failed to receive any bytes: %s", strerror(errno));
         cleanup_and_exit(-1);
     }
 }
@@ -138,9 +97,10 @@ static void receive_data()
 static void send_data()
 {
     // Send file to client line-by-line
-    char* send_line;
+    char* send_line = NULL;
     ssize_t len = 0;
     size_t buffer_size = BUFFER_MAX_LENGTH;
+    rewind(file_ptr);                           // Go to start of file
     while ((len = getline(&send_line, &buffer_size, file_ptr)) != -1)
     {
         ssize_t sent = 0;
@@ -149,41 +109,35 @@ static void send_data()
             ssize_t s = send(client_fd, (send_line + sent), (len - sent), 0);
             if (s < 0)
             {
-                syslog(LOG_ERR, "Failed to send any bytes: errno %d", errno);
+                syslog(LOG_ERR, "Failed to send any bytes: %s", strerror(errno));
             }
             sent += s;
         }
     }
 
-    free(send_line);
+    if (send_line != NULL) free(send_line);
 }
 
-int main(int argc, char** argv)
+static void init_signal_handler(struct sigaction* signal_ptr)
 {
-    // Declare variables
-    struct sigaction signal;
+    memset(signal_ptr, 0, sizeof(struct sigaction));
+    signal_ptr->sa_handler = signal_handler;
+    if (sigaction(SIGINT, signal_ptr, NULL) != 0)
+    {
+        syslog(LOG_ERR, "Unable to register SIGINT: %s", strerror(errno));
+        cleanup_and_exit(-1);
+    }
+    if (sigaction(SIGTERM, signal_ptr, NULL) != 0)
+    {
+        syslog(LOG_ERR, "Unable to register SIGTERM: %s", strerror(errno));
+        cleanup_and_exit(-1);
+    }
+}
+
+static void init_socket()
+{
     struct addrinfo* server_addr;
     struct addrinfo hints;
-    struct sockaddr_storage client_addr;
-    socklen_t client_addr_size = sizeof(struct sockaddr);
-    char client_ip[INET_ADDRSTRLEN];
-
-    // Open logger
-    openlog("aesdsocket", 0, LOG_USER);
-
-    // Setup signal handler
-    memset(&signal, 0, sizeof(struct sigaction));
-    signal.sa_handler = signal_handler;
-    if (sigaction(SIGINT, &signal, NULL) != 0)
-    {
-        syslog(LOG_ERR, "Unable to register SIGINT: errno %d", errno);
-        cleanup_and_exit(-1);
-    }
-    if (sigaction(SIGTERM, &signal, NULL) != 0)
-    {
-        syslog(LOG_ERR, "Unable to register SIGTERM: errno %d", errno);
-        cleanup_and_exit(-1);
-    }
 
     // Get address (port 9000)
     memset(&hints, 0, sizeof(hints));
@@ -192,7 +146,7 @@ int main(int argc, char** argv)
     hints.ai_flags = AI_PASSIVE;
     if (getaddrinfo(NULL, "9000", &hints, &server_addr) != 0)
     {
-        syslog(LOG_ERR, "Unable to get addr info: errno %d", errno);
+        syslog(LOG_ERR, "Unable to get addr info: %s", strerror(errno));
         freeaddrinfo(server_addr);
         cleanup_and_exit(-1);
     }
@@ -201,73 +155,90 @@ int main(int argc, char** argv)
     socket_fd = socket(server_addr->ai_family, server_addr->ai_socktype, server_addr->ai_protocol);
     if (socket_fd < 0)
     {
-        syslog(LOG_ERR, "Unable to create socket: errno %d", errno);
+        syslog(LOG_ERR, "Unable to create socket: %s", strerror(errno));
         cleanup_and_exit(-1);
     }
 
     // Set socket to be reusable
-    int optval = 0;
+    int optval = 1;
     if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)))
     {
-        syslog(LOG_ERR, "Unable to set socket options: errno %d", errno);
+        syslog(LOG_ERR, "Unable to set socket options: %s", strerror(errno));
         freeaddrinfo(server_addr);
         cleanup_and_exit(-1);
     }
 
     // Bind address to socket
-    if (bind(socket_fd, server_addr->ai_addr, server_addr->ai_addrlen) == -1)
+    if (bind(socket_fd, server_addr->ai_addr, server_addr->ai_addrlen) < 0)
     {
-        syslog(LOG_ERR, "Unable to bind socket: errno %d", errno);
+        syslog(LOG_ERR, "Unable to bind socket: %s", strerror(errno));
         freeaddrinfo(server_addr);
         cleanup_and_exit(-1);
     }
 
     // Free server_addr since we are done with it
     freeaddrinfo(server_addr);
+}
 
+int main(int argc, char* argv[])
+{
+    // Open logger
+    openlog(NULL, 0, LOG_USER);
+
+    // Setup signal handler
+    struct sigaction signal;
+    init_signal_handler(&signal);
+
+    // Setup socket
+    init_socket();
+    
     // Handle -d argument to run as daemon
-    if ((argc == 1) && (strcmp(argv[1], "-d")))
+    if ((argc == 2) && (strcmp(argv[1], "-d") == 0) && (daemon(0 ,0) < 0))
     {
-        start_daemon();
+        syslog(LOG_ERR, "Failed to create daemon: %s", strerror(errno));
+    }
+    
+    // Listen for connections
+    if (listen(socket_fd, LISTEN_BACKLOG) < 0)
+    {
+        syslog(LOG_ERR, "Unable to listen for connection: %s", strerror(errno));
+        cleanup_and_exit(-1);
     }
 
     while (true)
     {
-        // Listen for connections
-        if (listen(socket_fd, 10) < 0)
-        {
-            syslog(LOG_ERR, "Unable to listen for connection: errno %d", errno);
-            cleanup_and_exit(-1);
-        }
-    
         // Accept connection
-        client_fd = accept(socket_fd, (struct sockaddr*)&client_addr, &client_addr_size);
-        if (client_fd < 0)
+        struct sockaddr_storage client_addr;
+        socklen_t client_addr_size = sizeof(client_addr);
+        char client_ip[INET_ADDRSTRLEN];
+        if ((client_fd = accept(socket_fd, (struct sockaddr*)&client_addr, &client_addr_size)) < 0)
         {
-            syslog(LOG_ERR, "Unable to accept connection: errno %d", errno);
+            syslog(LOG_ERR, "Unable to accept connection: %s", strerror(errno));
             cleanup_and_exit(-1);
         }
-
-        // Log client IP address
-        inet_ntop(client_addr.ss_family, &((struct sockaddr_in*)&client_addr)->sin_addr, client_ip, sizeof(client_ip));
-        syslog(LOG_INFO, "Accepted connection from %s", client_ip);
+        else
+        {
+            // Log client IP address
+            inet_ntop(client_addr.ss_family, &((struct sockaddr_in*)&client_addr)->sin_addr, client_ip, sizeof(client_ip));
+            syslog(LOG_INFO, "Accepted connection from %s", client_ip);
+        }
 
         // Open file for recv/send messages
-        file_ptr = fopen(FILE_PATH, "ar");
-        if (file_ptr == NULL)
+        if ((file_ptr = fopen(FILE_PATH, "a+")) == NULL)
         {
-            syslog(LOG_ERR, "Unable to open "FILE_PATH" , errno %d", errno);
+            syslog(LOG_ERR, "Unable to open "FILE_PATH" , %s", strerror(errno));
             cleanup_and_exit(-1);
         }
 
         // Receive and send data
-        receive_data(file_ptr, client_fd);
-        send_data(file_ptr, client_fd);
+        receive_data();
+        send_data();
     
         // Close connection and log close message
         fclose(file_ptr);
+        file_ptr = NULL;
         close(client_fd);
-        syslog(LOG_INFO, "Closed connection.");// from %s", client_addr.sa_data);
+        syslog(LOG_INFO, "Closed connection from %s", client_ip);
     }
 
     return 0;
