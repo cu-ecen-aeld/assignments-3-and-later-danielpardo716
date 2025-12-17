@@ -14,6 +14,7 @@
 
 #define BUFFER_MAX_LENGTH   1024
 #define LISTEN_BACKLOG      10
+#define SERVER_PORT         "9000"
 #define FILE_PATH           "/var/tmp/aesdsocketdata"
 
 static FILE* file_ptr = NULL;
@@ -36,11 +37,8 @@ static void cleanup_and_exit(int exit_code)
     {
         fclose(file_ptr);
     }
-    if (remove(FILE_PATH) < 0)
-    {
-        syslog(LOG_ERR, "Failed to remove "FILE_PATH": %s", strerror(errno));
-    }
-    
+
+    remove(FILE_PATH);
     closelog();
     exit(exit_code);
 }
@@ -54,69 +52,109 @@ static void signal_handler(int signal_number)
     }
 }
 
-static void receive_data()
+static void process_data()
 {
-    char recv_buffer[BUFFER_MAX_LENGTH];
+    // Open file to append to
+    if ((file_ptr = fopen(FILE_PATH, "a+")) == NULL)
+    {
+        syslog(LOG_ERR, "Unable to open "FILE_PATH" , %s", strerror(errno));
+        cleanup_and_exit(-1);
+    }
+
+    char buffer[BUFFER_MAX_LENGTH];
     char line_buffer[BUFFER_MAX_LENGTH];
     size_t line_len = 0;
-
     ssize_t bytes_received = 0;
-    while ((bytes_received = recv(client_fd, recv_buffer, sizeof(recv_buffer), 0)) > 0)
+    while ((bytes_received = recv(client_fd, buffer, sizeof(buffer), 0)) > 0)
     {   
+        // Check for receiving errors
+        if (bytes_received < 0)
+        {
+            syslog(LOG_ERR, "Failed to receive any bytes: %s", strerror(errno));
+            cleanup_and_exit(-1);
+        }
+
         // Scan for newlines and append to file
         for (int i = 0; i < bytes_received; ++i)
         {
-            if (recv_buffer[i] == '\n')
+            // Copy bytes to file line buffer
+            if (line_len < (BUFFER_MAX_LENGTH - 1))
             {
-                syslog(LOG_INFO, "Received string %s", line_buffer);
+                line_buffer[line_len] = buffer[i];
+                ++line_len;
+            }
+
+            if (buffer[i] == '\n')
+            {
+                // If newline received, append to file
+                // syslog(LOG_INFO, "Received string %s", line_buffer);
                 if (fwrite(line_buffer, 1, line_len, file_ptr) != line_len)
                 {
                     syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
                     cleanup_and_exit(-1);
                 }
                 fflush(file_ptr);
-            }
-            else
-            {
-                if (line_len < (BUFFER_MAX_LENGTH - 1))
+
+                // Read file and send to client
+                // syslog(LOG_INFO, "Reading file");
+                rewind(file_ptr);
+                while (fgets(buffer, sizeof(buffer), file_ptr))
                 {
-                    line_buffer[line_len] = recv_buffer[i];
-                    ++line_len;
+                    size_t len = strlen(buffer);
+                    ssize_t bytes_sent = 0;
+                    // syslog(LOG_INFO, "Sending string %s with length %ld", buffer, len);
+                    
+                    while (bytes_sent < (ssize_t)len)
+                    {
+                        ssize_t n = send(client_fd, (buffer + bytes_sent), (len - bytes_sent), 0);
+                        // syslog(LOG_INFO, "Sent %ld bytes", n);
+                        if (n <= 0)
+                        {
+                            syslog(LOG_ERR, "Failed to send any bytes: %s", strerror(errno));
+                            cleanup_and_exit(-1);
+                        }
+                        bytes_sent += n;
+                    }
                 }
+                syslog(LOG_INFO, "Done sending file");
+                fclose(file_ptr);
+                file_ptr = NULL;
+                return;
             }
         }
     }
-
-    if (bytes_received < 0)
-    {
-        syslog(LOG_ERR, "Failed to receive any bytes: %s", strerror(errno));
-        cleanup_and_exit(-1);
-    }
 }
 
-static void send_data()
-{
-    // Send file to client line-by-line
-    char* send_line = NULL;
-    ssize_t len = 0;
-    size_t buffer_size = BUFFER_MAX_LENGTH;
-    rewind(file_ptr);                           // Go to start of file
-    while ((len = getline(&send_line, &buffer_size, file_ptr)) != -1)
-    {
-        ssize_t sent = 0;
-        while (sent < len)
-        {
-            ssize_t s = send(client_fd, (send_line + sent), (len - sent), 0);
-            if (s < 0)
-            {
-                syslog(LOG_ERR, "Failed to send any bytes: %s", strerror(errno));
-            }
-            sent += s;
-        }
-    }
+// static void send_data()
+// {
+//     // char send_buffer[] = "1234\n";
+//     // ssize_t num_bytes = send(client_fd, (send_buffer), sizeof(send_buffer), 0);
+//     // syslog(LOG_INFO, "Sent %ld bytes: %s", num_bytes, send_buffer);
 
-    if (send_line != NULL) free(send_line);
-}
+//     char send_buffer[BUFFER_MAX_LENGTH];
+//     rewind(file_ptr);                           // Go to start of file
+//     syslog(LOG_INFO, "Reading file");
+     
+//     while (fgets(send_buffer, sizeof(send_buffer), file_ptr))
+//     {
+//         size_t len = strlen(send_buffer);
+//         ssize_t sent_bytes = 0;
+//         syslog(LOG_INFO, "Sending string %s with length %ld", send_buffer, len);
+        
+//         while (sent_bytes < (ssize_t)len)
+//         {
+//             ssize_t n = send(client_fd, (send_buffer + sent_bytes), (len - sent_bytes), 0);
+//             syslog(LOG_INFO, "Sent %ld bytes", n);
+//             if (n <= 0)
+//             {
+//                 syslog(LOG_ERR, "Failed to send any bytes: %s", strerror(errno));
+//                 cleanup_and_exit(-1);
+//             }
+//             sent_bytes += n;
+//         }
+//     }
+//     syslog(LOG_INFO, "Done sending file");
+// }
 
 static void init_signal_handler(struct sigaction* signal_ptr)
 {
@@ -141,10 +179,10 @@ static void init_socket()
 
     // Get address (port 9000)
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
+    hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
-    if (getaddrinfo(NULL, "9000", &hints, &server_addr) != 0)
+    if (getaddrinfo(NULL, SERVER_PORT, &hints, &server_addr) < 0)
     {
         syslog(LOG_ERR, "Unable to get addr info: %s", strerror(errno));
         freeaddrinfo(server_addr);
@@ -152,8 +190,7 @@ static void init_socket()
     }
 
     // Create IPv4 TCP/IP socket
-    socket_fd = socket(server_addr->ai_family, server_addr->ai_socktype, server_addr->ai_protocol);
-    if (socket_fd < 0)
+    if ((socket_fd = socket(server_addr->ai_family, server_addr->ai_socktype, server_addr->ai_protocol)) < 0)
     {
         syslog(LOG_ERR, "Unable to create socket: %s", strerror(errno));
         cleanup_and_exit(-1);
@@ -161,7 +198,7 @@ static void init_socket()
 
     // Set socket to be reusable
     int optval = 1;
-    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)))
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0)
     {
         syslog(LOG_ERR, "Unable to set socket options: %s", strerror(errno));
         freeaddrinfo(server_addr);
@@ -193,7 +230,7 @@ int main(int argc, char* argv[])
     init_socket();
     
     // Handle -d argument to run as daemon
-    if ((argc == 2) && (strcmp(argv[1], "-d") == 0) && (daemon(0 ,0) < 0))
+    if ((argc == 2) && (strcmp(argv[1], "-d") == 0) && (daemon(0, 0) < 0))
     {
         syslog(LOG_ERR, "Failed to create daemon: %s", strerror(errno));
     }
@@ -223,20 +260,10 @@ int main(int argc, char* argv[])
             syslog(LOG_INFO, "Accepted connection from %s", client_ip);
         }
 
-        // Open file for recv/send messages
-        if ((file_ptr = fopen(FILE_PATH, "a+")) == NULL)
-        {
-            syslog(LOG_ERR, "Unable to open "FILE_PATH" , %s", strerror(errno));
-            cleanup_and_exit(-1);
-        }
-
         // Receive and send data
-        receive_data();
-        send_data();
+        process_data();
     
         // Close connection and log close message
-        fclose(file_ptr);
-        file_ptr = NULL;
         close(client_fd);
         syslog(LOG_INFO, "Closed connection from %s", client_ip);
     }
