@@ -1,4 +1,4 @@
-CC := gcc
+CC = gcc
 CCFLAGS = -g -Wall -Werror
 
 all: aesdsocket
