@@ -1,5 +1,7 @@
-CC = gcc
-CCFLAGS = -g -Wall -Werror
+CC ?= ${CROSS_COMPILE}gcc
+CCFLAGS ?= -g -Wall -Werror
+TARGET ?= aesdsocket
+LDFLAGS ?= -lpthread -lrt
 
 all: aesdsocket
 

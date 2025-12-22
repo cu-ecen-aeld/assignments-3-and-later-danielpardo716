@@ -11,6 +11,8 @@
 #include <sys/types.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <sys/queue.h>
+#include <pthread.h>
 
 #define BUFFER_MAX_LENGTH   256
 #define LISTEN_BACKLOG      10
@@ -20,6 +22,16 @@
 static FILE* file_ptr = NULL;
 static int socket_fd = -1;
 static int client_fd = -1;
+
+// Linked list for threads
+struct thread_node {
+    pthread_t thread_id;
+    bool completed;
+    SLIST_ENTRY(thread_node) entries;
+};
+SLIST_HEAD(thread_list, thread_node);
+static struct thread_list head = SLIST_HEAD_INITIALIZER(head);
+static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void cleanup_and_exit(int exit_code)
 {
@@ -113,8 +125,11 @@ static void init_socket()
     freeaddrinfo(server_addr);
 }
 
-static void process_data()
+void* process_data(void* param)
 {
+    struct thread_node* node = (struct thread_node*)param;
+    pthread_mutex_lock(&file_mutex);
+
     // Open file to append to
     if ((file_ptr = fopen(FILE_PATH, "a+")) == NULL)
     {
@@ -200,8 +215,56 @@ static void process_data()
                 fclose(file_ptr);
                 file_ptr = NULL;
                 free(line_buffer);
-                return;
+                node->completed = true;
+                pthread_mutex_unlock(&file_mutex);
+                return NULL;
             }
+        }
+    }
+    return NULL;
+}
+
+static void spawn_thread()
+{
+    // Allocate and init node
+    struct thread_node* node = malloc(sizeof(struct thread_node));
+    if (node == NULL)
+    {
+        syslog(LOG_ERR, "Failed to allocate memory for thread node: %s", strerror(errno));
+        cleanup_and_exit(-1);
+    }
+    node->completed = false;
+
+    // Create thread
+    int ret = 0;
+    if ((ret = pthread_create(&(node->thread_id), NULL, process_data, node)) != 0)
+    {
+        syslog(LOG_ERR, "Unable to create thread: %s", strerror(ret));
+        cleanup_and_exit(-1);
+    }
+
+    // Add to linked list
+    SLIST_INSERT_HEAD(&head, node, entries);
+}
+
+void cleanup_completed_threads()
+{
+    // Safely iterate through linked list
+    struct thread_node *cur, *next;
+    for (cur = SLIST_FIRST(&head); cur != NULL; cur = next)
+    {
+        next = SLIST_NEXT(cur, entries);
+        if (cur->completed)
+        {
+            // If thread is finished, cleanup resources
+            int ret = 0;
+            if ((ret = pthread_join(cur->thread_id, NULL) != 0))
+            {
+                syslog(LOG_ERR, "Unable to join thread: %s", strerror(ret));
+                cleanup_and_exit(-1);
+            }
+            SLIST_REMOVE(&head, cur, thread_node, entries);
+            free(cur);
         }
     }
 }
@@ -242,15 +305,16 @@ int main(int argc, char* argv[])
             syslog(LOG_ERR, "Unable to accept connection: %s", strerror(errno));
             cleanup_and_exit(-1);
         }
-        else
-        {
-            // Log client IP address
-            inet_ntop(client_addr.ss_family, &((struct sockaddr_in*)&client_addr)->sin_addr, client_ip, sizeof(client_ip));
-            syslog(LOG_INFO, "Accepted connection from %s", client_ip);
-        }
 
-        // Receive and send data
-        process_data();
+        // Log client IP address
+        inet_ntop(client_addr.ss_family, &((struct sockaddr_in*)&client_addr)->sin_addr, client_ip, sizeof(client_ip));
+        syslog(LOG_INFO, "Accepted connection from %s", client_ip);
+
+        // Add new thread to the linked list
+        spawn_thread();
+
+        // Check if any threads have completed
+        cleanup_completed_threads();
     
         // Close connection and log close message
         close(client_fd);
