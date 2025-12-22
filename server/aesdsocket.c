@@ -12,7 +12,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 
-#define BUFFER_MAX_LENGTH   81920                       // TODO: determine how to reduce size using dynamic allocation
+#define BUFFER_MAX_LENGTH   256
 #define LISTEN_BACKLOG      10
 #define SERVER_PORT         "9000"
 #define FILE_PATH           "/var/tmp/aesdsocketdata"
@@ -123,27 +123,49 @@ static void process_data()
     }
 
     char buffer[BUFFER_MAX_LENGTH];
-    char line_buffer[BUFFER_MAX_LENGTH];
+    char* line_buffer = NULL;
+    size_t line_capacity = 256;
     size_t line_len = 0;
     ssize_t bytes_received = 0;
+    
+    // Allocate initial line buffer
+    line_buffer = (char*)malloc(line_capacity);
+    if (line_buffer == NULL)
+    {
+        syslog(LOG_ERR, "Failed to allocate memory for line buffer: %s", strerror(errno));
+        cleanup_and_exit(-1);
+    }
+
     while ((bytes_received = recv(client_fd, buffer, sizeof(buffer), 0)) > 0)
     {   
         // Check for receiving errors
         if (bytes_received < 0)
         {
             syslog(LOG_ERR, "Failed to receive any bytes: %s", strerror(errno));
+            free(line_buffer);
             cleanup_and_exit(-1);
         }
 
         // Scan for newlines and append to file
         for (int i = 0; i < bytes_received; ++i)
         {
-            // Copy bytes to file line buffer
-            if (line_len < (BUFFER_MAX_LENGTH - 1))
+            // Grow line buffer if needed
+            if (line_len >= (line_capacity - 1))
             {
-                line_buffer[line_len] = buffer[i];
-                ++line_len;
+                line_capacity *= 2;
+                char* tmp = (char*)realloc(line_buffer, line_capacity);
+                if (tmp == NULL)
+                {
+                    syslog(LOG_ERR, "Failed to reallocate memory for line buffer: %s", strerror(errno));
+                    free(line_buffer);
+                    cleanup_and_exit(-1);
+                }
+                line_buffer = tmp;
             }
+
+            // Copy bytes to file line buffer
+            line_buffer[line_len] = buffer[i];
+            ++line_len;
 
             if (buffer[i] == '\n')
             {
@@ -151,6 +173,7 @@ static void process_data()
                 if (fwrite(line_buffer, 1, line_len, file_ptr) != line_len)
                 {
                     syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
+                    free(line_buffer);
                     cleanup_and_exit(-1);
                 }
                 fflush(file_ptr);
@@ -167,6 +190,7 @@ static void process_data()
                         if (n <= 0)
                         {
                             syslog(LOG_ERR, "Failed to send any bytes: %s", strerror(errno));
+                            free(line_buffer);
                             cleanup_and_exit(-1);
                         }
                         bytes_sent += n;
@@ -175,6 +199,7 @@ static void process_data()
                 syslog(LOG_INFO, "Done sending file");
                 fclose(file_ptr);
                 file_ptr = NULL;
+                free(line_buffer);
                 return;
             }
         }
