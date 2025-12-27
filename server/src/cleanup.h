@@ -1,0 +1,1 @@
+void cleanup_and_exit(int exit_code);

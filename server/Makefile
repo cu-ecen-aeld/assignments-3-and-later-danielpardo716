@@ -1,15 +1,26 @@
 CC ?= ${CROSS_COMPILE}gcc
 CCFLAGS ?= -g -Wall -Werror
-TARGET ?= aesdsocket
 LDFLAGS ?= -lpthread -lrt
+SRC_DIR ?= src
+OBJ_DIR ?= obj
+TARGET ?= aesdsocket
 
-all: aesdsocket
+SRCS := $(wildcard $(SRC_DIR)/*.c)
+OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
 
-aesdsocket.o: aesdsocket.c
-	$(CC) $(CCFLAGS) -c aesdsocket.c
+all: $(TARGET)
 
-aesdsocket: aesdsocket.o
-	$(CC) $(LDFLAGS) aesdsocket.o -o aesdsocket
+# Linking object files to create the final executable
+$(TARGET): $(OBJS)
+	mkdir -p $(dir $@)
+	$(CC) $(LDFLAGS) -o $@ $^
+
+# Compiling source files to object files
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+	mkdir -p $(dir $@)
+	$(CC) $(CCFLAGS) -c -o $@ $<
 
 clean:
-	rm -f aesdsocket.o aesdsocket
+	rm -rf $(OBJ_DIR) $(TARGET)
+
+.PHONY: all clean
