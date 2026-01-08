@@ -66,7 +66,8 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     mutex_lock(&dev->mutex);
 
     // Find the entry corresponding to f_pos
-    struct aesd_buffer_entry* entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, (size_t)*f_pos, NULL);
+    size_t entry_offset_byte;
+    struct aesd_buffer_entry* entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, (size_t)*f_pos, &entry_offset_byte);
     if (entry != NULL)
     {
         // Determine number of bytes to copy
