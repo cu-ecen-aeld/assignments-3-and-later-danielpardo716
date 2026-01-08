@@ -42,9 +42,9 @@ int aesd_release(struct inode *inode, struct file *filp)
     PDEBUG("release");
     
     // Deallocate any resources allocated in open
-    struct aesd_dev* dev = filp->private_data;
-    kfree(dev->working_entry.buffptr);
-    kfree(filp->private_data);
+    // struct aesd_dev* dev = filp->private_data;
+    // kfree(dev->working_entry.buffptr);
+    // kfree(filp->private_data);
     return 0;
 }
 
@@ -82,6 +82,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
             // Update f_pos by the number of bytes read
             *f_pos += bytes_to_copy;
             retval = bytes_to_copy;
+            kfree(entry);
         }
     }
 
