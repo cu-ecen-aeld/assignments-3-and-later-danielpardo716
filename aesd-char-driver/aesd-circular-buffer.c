@@ -59,11 +59,7 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 */
 const char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
-    char* overwritten_entry = NULL;
-    if (buffer->full)
-    {
-        overwritten_entry = buffer->entry[buffer->out_offs].buffptr;
-    }
+    const char* overwritten_entry = (buffer->full) ? buffer->entry[buffer->out_offs].buffptr : NULL;
 
     buffer->entry[buffer->in_offs] = *add_entry;
     buffer->in_offs = (buffer->in_offs == (AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - 1)) ? 0 : (buffer->in_offs + 1);

@@ -80,6 +80,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
             // Update f_pos by the number of bytes read
             *f_pos += bytes_to_copy;
             retval = bytes_to_copy;
+            kfree(entry->buffptr);
         }
     }
 
@@ -105,22 +106,18 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     mutex_lock(&dev->mutex);
 
     // Append data to working_entry
-    char* new_buffptr = kmalloc(dev->working_entry.size + count, GFP_KERNEL);
-    if (new_buffptr == NULL)
+    dev->working_entry.buffptr = krealloc(dev->working_entry.buffptr, dev->working_entry.size + count, GFP_KERNEL);
+    if (dev->working_entry.buffptr == NULL)
     {
         mutex_unlock(&dev->mutex);
         return -ENOMEM;
     }
-    memcpy(new_buffptr, dev->working_entry.buffptr, dev->working_entry.size);
-    if (copy_from_user(&new_buffptr[dev->working_entry.size], buf, count) != 0)
+    if (copy_from_user(&dev->working_entry.buffptr[dev->working_entry.size], buf, count) != 0)
     {
-        kfree(new_buffptr);
+        kfree(dev->working_entry.buffptr);
         mutex_unlock(&dev->mutex);
         return -EFAULT;
     }
-    // Free the old buffer and update to new one
-    kfree(dev->working_entry.buffptr);
-    dev->working_entry.buffptr = new_buffptr;
     dev->working_entry.size += count;
     retval = count;
 
@@ -133,6 +130,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         aesd_circular_buffer_add_entry(&dev->buffer, &dev->working_entry);
         
         // Reset working_entry
+        dev->working_entry.buffptr = NULL;
         dev->working_entry.size = 0;
     }
 
