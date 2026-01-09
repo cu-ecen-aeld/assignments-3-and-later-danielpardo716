@@ -40,11 +40,6 @@ int aesd_open(struct inode *inode, struct file *filp)
 int aesd_release(struct inode *inode, struct file *filp)
 {
     PDEBUG("release");
-    
-    // Deallocate any resources allocated in open
-    // struct aesd_dev* dev = filp->private_data;
-    // kfree(dev->working_entry.buffptr);
-    // kfree(filp->private_data);
     return 0;
 }
 
@@ -83,7 +78,6 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
             // Update f_pos by the number of bytes read
             *f_pos += bytes_to_copy;
             retval = bytes_to_copy;
-            kfree(entry);
         }
     }
 
@@ -122,22 +116,16 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         mutex_unlock(&dev->mutex);
         return -EFAULT;
     }
-    dev->working_entry.size += count;
+    // Free the old buffer and update to new one
+    kfree(dev->working_entry.buffptr);
     dev->working_entry.buffptr = new_buffptr;
-    kfree(new_buffptr);
+    dev->working_entry.size += count;
     retval = count;
-
-    if (dev->working_entry.buffptr == NULL)
-    {
-        PDEBUG("Unnecessary free of new_buffptr in aesd_write");
-        mutex_unlock(&dev->mutex);
-        return -ENOMEM;
-    }
 
     // Check for newline characters and add to circular buffer
     if (dev->working_entry.buffptr[dev->working_entry.size - 1] == '\n')
     {
-        PDEBUG("Newline detected, adding entry to circular buffer");
+        PDEBUG("Newline detected, adding entry \"%s\" to circular buffer", dev->working_entry.buffptr);
 
         // Add the working entry to the circular buffer
         aesd_circular_buffer_add_entry(&dev->buffer, &dev->working_entry);
