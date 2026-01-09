@@ -75,7 +75,7 @@ const char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, 
 
     buffer->full = (buffer->in_offs == buffer->out_offs);
 
-    // TODO: return a pointer to the memory that was overwritten, if any
+    // Return a pointer to the memory that was overwritten, if any
     return overwritten_entry;
 }
 

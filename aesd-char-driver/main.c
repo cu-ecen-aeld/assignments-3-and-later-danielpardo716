@@ -112,7 +112,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         return -ENOMEM;
     }
     memcpy(new_buffptr, dev->working_entry.buffptr, dev->working_entry.size);
-    if (copy_from_user(&new_buffptr[dev->working_entry.size], buf, count) < 0)
+    if (copy_from_user(&new_buffptr[dev->working_entry.size], buf, count) != 0)
     {
         kfree(new_buffptr);
         mutex_unlock(&dev->mutex);
@@ -133,8 +133,6 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         aesd_circular_buffer_add_entry(&dev->buffer, &dev->working_entry);
         
         // Reset working_entry
-        kfree(dev->working_entry.buffptr);
-        dev->working_entry.buffptr = NULL;
         dev->working_entry.size = 0;
     }
 
