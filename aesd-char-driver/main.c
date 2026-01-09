@@ -65,6 +65,8 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     struct aesd_buffer_entry* entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, (size_t)*f_pos, &entry_offset_byte);
     if (entry != NULL)
     {
+        PDEBUG("Found entry \"%s\" at f_pos %lld", entry->buffptr, *f_pos);
+
         // Determine number of bytes to copy
         size_t bytes_to_copy = min(count, entry->size);
 
@@ -125,7 +127,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     // Check for newline characters and add to circular buffer
     if (dev->working_entry.buffptr[dev->working_entry.size - 1] == '\n')
     {
-        PDEBUG("Newline detected, adding entry \"%s\" to circular buffer", dev->working_entry.buffptr);
+        PDEBUG("Adding entry \"%s\" to circular buffer", dev->working_entry.buffptr);
 
         // Add the working entry to the circular buffer
         aesd_circular_buffer_add_entry(&dev->buffer, &dev->working_entry);
