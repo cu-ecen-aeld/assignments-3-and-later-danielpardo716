@@ -12,7 +12,7 @@ void cleanup_and_exit(int exit_code)
     socket_cleanup();
     file_cleanup();
     thread_remove_all();
-#ifdef USE_AESD_CHAR_DEVICE
+#ifndef USE_AESD_CHAR_DEVICE
     timer_cleanup();
 #endif
     closelog();

@@ -125,7 +125,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         const char* overwritten_entry = aesd_circular_buffer_add_entry(&dev->buffer, &dev->working_entry);
         if (overwritten_entry != NULL)
         {
-            PDEBUG("Overwritten entry: %s, buffer in: %d, out: %d, full: %d", overwritten_entry, dev->buffer.in_offs, dev->buffer.out_offs, dev->buffer.full);
+            PDEBUG("Overwritten entry: \"%s\"", overwritten_entry);
             kfree((void*)overwritten_entry);
         }
         
