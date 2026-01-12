@@ -63,7 +63,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     struct aesd_buffer_entry* entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, (size_t)*f_pos, &entry_offset_byte);
     if (entry != NULL)
     {
-        PDEBUG("Found entry \"%s\" at f_pos %lld", entry->buffptr, *f_pos);
+        PDEBUG("Found entry \"%s\" at offset %lld", entry->buffptr, *f_pos);
 
         // Determine number of bytes to copy
         size_t bytes_to_copy = min(count, entry->size);
@@ -78,7 +78,6 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
             // Update f_pos by the number of bytes read
             *f_pos += bytes_to_copy;
             retval = bytes_to_copy;
-            kfree(entry->buffptr);
         }
     }
 
@@ -108,7 +107,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         mutex_unlock(&dev->mutex);
         return -ENOMEM;
     }
-    if (copy_from_user(&dev->working_entry.buffptr[dev->working_entry.size], buf, count) != 0)
+    if (copy_from_user((void*)&dev->working_entry.buffptr[dev->working_entry.size], buf, count) != 0)
     {
         kfree(dev->working_entry.buffptr);
         mutex_unlock(&dev->mutex);
@@ -126,7 +125,8 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         const char* overwritten_entry = aesd_circular_buffer_add_entry(&dev->buffer, &dev->working_entry);
         if (overwritten_entry != NULL)
         {
-            kfree(overwritten_entry);
+            PDEBUG("Overwritten entry: %s, buffer in: %d, out: %d, full: %d", overwritten_entry, dev->buffer.in_offs, dev->buffer.out_offs, dev->buffer.full);
+            kfree((void*)overwritten_entry);
         }
         
         // Reset working_entry
@@ -163,8 +163,9 @@ static int aesd_setup_cdev(struct aesd_dev *dev)
 int aesd_init_module(void)
 {
     dev_t dev = 0;
+    int result;
+    result = alloc_chrdev_region(&dev, aesd_minor, 1, "aesdchar");
     aesd_major = MAJOR(dev);
-    int result = alloc_chrdev_region(&dev, aesd_minor, 1, "aesdchar");
     if (result < 0) {
         printk(KERN_WARNING "Can't get major %d\n", aesd_major);
         return result;
