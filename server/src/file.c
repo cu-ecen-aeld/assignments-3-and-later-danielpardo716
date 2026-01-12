@@ -17,10 +17,21 @@
 static FILE* file_ptr = NULL;
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+static FILE* file_open(const char* mode)
+{
+#ifdef USE_AESD_CHAR_DEVICE
+    int flags = (strcmp(mode, "a") == 0) ? (O_RDWR | O_APPEND) : O_RDONLY;
+    int fd = open(FILE_PATH, flags);
+    return fdopen(fd, mode);
+#else
+    return fopen(FILE_PATH, mode);
+#endif
+}
+
 void file_append(const char* data, size_t length)
 {
     pthread_mutex_lock(&file_mutex);
-    if ((file_ptr = fopen(FILE_PATH, "a")) == NULL)
+    if ((file_ptr = file_open("a")) == NULL)
     {
         syslog(LOG_ERR, "Unable to open "FILE_PATH" , %s", strerror(errno));
         cleanup_and_exit(EXIT_FAILURE);
@@ -39,7 +50,7 @@ void file_append(const char* data, size_t length)
 long file_read(char** buffer)
 {
     pthread_mutex_lock(&file_mutex);
-    if ((file_ptr = fopen(FILE_PATH, "r")) == NULL)
+    if ((file_ptr = file_open("r")) == NULL)
     {
         syslog(LOG_ERR, "Unable to open "FILE_PATH" , %s", strerror(errno));
         cleanup_and_exit(EXIT_FAILURE);
