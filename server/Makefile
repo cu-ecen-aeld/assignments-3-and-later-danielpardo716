@@ -1,5 +1,5 @@
 CC ?= ${CROSS_COMPILE}gcc
-CCFLAGS ?= -g -Wall -Werror
+CCFLAGS ?= -g -Wall -Werror -DUSE_AESD_CHAR_DEVICE
 LDFLAGS ?= -lpthread -lrt
 SRC_DIR ?= src
 OBJ_DIR ?= obj
