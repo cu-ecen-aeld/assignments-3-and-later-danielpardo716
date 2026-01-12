@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <syslog.h>
 #include <pthread.h>
+#include <fcntl.h>
 
 #include "file.h"
 #include "cleanup.h"
