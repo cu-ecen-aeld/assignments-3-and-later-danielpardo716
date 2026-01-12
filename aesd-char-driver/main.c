@@ -55,8 +55,6 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
     ssize_t retval = 0;
-    PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
-
     struct aesd_dev* dev = filp->private_data;
     mutex_lock(&dev->mutex);
 
@@ -99,9 +97,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
-    ssize_t retval = -ENOMEM;
-    PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
-    
+    ssize_t retval = -ENOMEM;    
     struct aesd_dev* dev = filp->private_data;
     mutex_lock(&dev->mutex);
 
@@ -127,7 +123,11 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         PDEBUG("Adding entry \"%s\" to circular buffer", dev->working_entry.buffptr);
 
         // Add the working entry to the circular buffer
-        aesd_circular_buffer_add_entry(&dev->buffer, &dev->working_entry);
+        const char* overwritten_entry = aesd_circular_buffer_add_entry(&dev->buffer, &dev->working_entry);
+        if (overwritten_entry != NULL)
+        {
+            kfree(overwritten_entry);
+        }
         
         // Reset working_entry
         dev->working_entry.buffptr = NULL;
@@ -137,6 +137,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     mutex_unlock(&dev->mutex);
     return retval;
 }
+
 struct file_operations aesd_fops = {
     .owner =    THIS_MODULE,
     .read =     aesd_read,
@@ -162,10 +163,8 @@ static int aesd_setup_cdev(struct aesd_dev *dev)
 int aesd_init_module(void)
 {
     dev_t dev = 0;
-    int result;
-    result = alloc_chrdev_region(&dev, aesd_minor, 1,
-            "aesdchar");
     aesd_major = MAJOR(dev);
+    int result = alloc_chrdev_region(&dev, aesd_minor, 1, "aesdchar");
     if (result < 0) {
         printk(KERN_WARNING "Can't get major %d\n", aesd_major);
         return result;
@@ -192,17 +191,18 @@ void aesd_cleanup_module(void)
     cdev_del(&aesd_device.cdev);
 
     // Free any allocated buffer entries
-    kfree(aesd_device.working_entry.buffptr);
-    
-    // Free circular buffer entries
-    for (int i = 0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; ++i)
+    struct aesd_buffer_entry *entry;
+    uint8_t index;
+    AESD_CIRCULAR_BUFFER_FOREACH(entry, &aesd_device.buffer, index)
     {
-        kfree(aesd_device.buffer.entry[i].buffptr);
+        if (entry->buffptr != NULL)
+        {
+            kfree(entry->buffptr);
+        }
     }
+    kfree(aesd_device.working_entry.buffptr);
 
-    // Destroy mutex
     mutex_destroy(&aesd_device.mutex);
-
     unregister_chrdev_region(devno, 1);
 }
 
