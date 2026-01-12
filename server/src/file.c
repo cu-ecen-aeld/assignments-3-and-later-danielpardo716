@@ -8,7 +8,11 @@
 #include "file.h"
 #include "cleanup.h"
 
-#define FILE_PATH           "/var/tmp/aesdsocketdata"
+#ifdef USE_AESD_CHAR_DEVICE
+    #define FILE_PATH           "/dev/aesdchar"
+#else
+    #define FILE_PATH           "/var/tmp/aesdsocketdata"
+#endif
 
 static FILE* file_ptr = NULL;
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -77,8 +81,10 @@ void file_cleanup()
         file_ptr = NULL;
     }
     pthread_mutex_unlock(&file_mutex);
-
     pthread_mutex_destroy(&file_mutex);
     
+#ifndef USE_AESD_CHAR_DEVICE
+    // Remove the file only if not using char device
     remove(FILE_PATH);
+#endif
 }

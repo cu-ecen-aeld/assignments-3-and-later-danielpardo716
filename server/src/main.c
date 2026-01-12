@@ -54,8 +54,10 @@ int main(int argc, char* argv[])
         syslog(LOG_ERR, "Failed to create daemon: %s", strerror(errno));
     }
 
-    // Setup timer
+#ifndef USE_AESD_CHAR_DEVICE
+    // Setup timer (only if using file, not char device)
     timer_init();
+#endif
     
     // Listen for connections
     socket_start_listening();
