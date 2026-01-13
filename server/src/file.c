@@ -61,9 +61,10 @@ long file_read(char** buffer)
     fseek(file_ptr, 0, SEEK_END);
     long file_size = ftell(file_ptr);
     rewind(file_ptr);
+    syslog(LOG_DEBUG, "File size: %ld", file_size);
 
     // Allocate buffer for file contents
-    *buffer = (char*)malloc(file_size + 1);
+    *buffer = (char*)malloc(file_size);
     if (*buffer == NULL)
     {
         syslog(LOG_ERR, "Failed to allocate memory for file read buffer: %s", strerror(errno));
@@ -71,9 +72,10 @@ long file_read(char** buffer)
     }
 
     // Read file contents into buffer
-    if (fread(*buffer, 1, file_size, file_ptr) < file_size)
+    size_t bytes_read = fread(*buffer, 1, file_size, file_ptr);
+    if (bytes_read < file_size)
     {
-        syslog(LOG_ERR, "Failed to read from file: %s", strerror(errno));
+        syslog(LOG_ERR, "Failed to read from file: %s. File size: %ld, read bytes: %ld", strerror(errno), file_size, bytes_read);
         free(*buffer);
         cleanup_and_exit(EXIT_FAILURE);
     }
