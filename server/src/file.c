@@ -15,6 +15,8 @@
     #define FILE_PATH           "/var/tmp/aesdsocketdata"
 #endif
 
+#define DEFAULT_FILE_SIZE   1024L
+
 static FILE* file_ptr = NULL;
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -57,25 +59,39 @@ long file_read(char** buffer)
         cleanup_and_exit(EXIT_FAILURE);
     }
 
-    // Determine file size
-    fseek(file_ptr, 0, SEEK_END);
-    long file_size = ftell(file_ptr);
-    rewind(file_ptr);
-    syslog(LOG_DEBUG, "File size: %ld", file_size);
-
     // Allocate buffer for file contents
-    *buffer = (char*)malloc(file_size);
+    size_t buffer_size = DEFAULT_FILE_SIZE;
+    size_t bytes_written = 0;
+    *buffer = (char*)malloc(buffer_size);
     if (*buffer == NULL)
     {
         syslog(LOG_ERR, "Failed to allocate memory for file read buffer: %s", strerror(errno));
         cleanup_and_exit(EXIT_FAILURE);
     }
 
-    // Read file contents into buffer
-    size_t bytes_read = fread(*buffer, 1, file_size, file_ptr);
-    if (bytes_read < file_size)
+    // Read file contents into buffer line by line
+    while (fgets(*buffer + bytes_written, buffer_size - bytes_written, file_ptr) != NULL)
     {
-        syslog(LOG_ERR, "Failed to read from file: %s. File size: %ld, read bytes: %ld", strerror(errno), file_size, bytes_read);
+        bytes_written = strlen(*buffer);
+        
+        // Check if we need to realloc buffer
+        if (bytes_written >= buffer_size - 1)
+        {
+            buffer_size *= 2;
+            char* temp = realloc(*buffer, buffer_size);
+            if (temp == NULL)
+            {
+                syslog(LOG_ERR, "Failed to reallocate memory for file read buffer: %s", strerror(errno));
+                free(*buffer);
+                cleanup_and_exit(EXIT_FAILURE);
+            }
+            *buffer = temp;
+        }
+    }
+
+    if (errno != 0)
+    {
+        syslog(LOG_ERR, "Failed to read from file: %s", strerror(errno));
         free(*buffer);
         cleanup_and_exit(EXIT_FAILURE);
     }
@@ -83,7 +99,7 @@ long file_read(char** buffer)
     fclose(file_ptr);
     file_ptr = NULL;
     pthread_mutex_unlock(&file_mutex);
-    return file_size;
+    return strlen(*buffer);
 }
 
 void file_cleanup()
