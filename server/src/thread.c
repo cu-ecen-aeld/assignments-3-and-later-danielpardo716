@@ -70,6 +70,8 @@ static void* process_data(void* arg)
 
             if (recv_buffer[i] == '\n')
             {
+                file_open();
+
                 // Check for ioctl command
                 if (strncmp(line_buffer, FILE_IOCTL_SEEKTO_CMD, FILE_IOCTL_SEEKTO_CMD_LEN) == 0)
                 {
@@ -96,9 +98,12 @@ static void* process_data(void* arg)
                     file_append(line_buffer, line_len);
                 }
     
-                // Read file and send to client
+                // Read file
                 char* read_buffer = NULL;
                 long buffer_size = file_read(&read_buffer);
+                file_close();
+
+                // Send file contents back to client
                 if (send(node->client_fd, read_buffer, buffer_size, 0) != buffer_size)
                 {
                     syslog(LOG_ERR, "Failed to send any bytes: %s", strerror(errno));

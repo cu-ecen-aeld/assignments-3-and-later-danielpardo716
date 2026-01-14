@@ -22,25 +22,26 @@
 static FILE* file_ptr = NULL;
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-static FILE* file_open(const char* mode)
+void file_open()
 {
-    int flags = (strcmp(mode, "a") == 0) ? (O_RDWR | O_APPEND) : O_RDONLY;
-    int fd = open(FILE_PATH, flags);
+    pthread_mutex_lock(&file_mutex);
+    int fd = open(FILE_PATH, (O_RDWR | O_APPEND));
     if (fd < 0)
     {
         syslog(LOG_ERR, "Unable to get fd for "FILE_PATH": %s", strerror(errno));
     }
-    return fdopen(fd, mode);
+    file_ptr = fdopen(fd, "a+");
+    if (file_ptr == NULL)
+    {
+        syslog(LOG_ERR, "Unable to open "FILE_PATH": %s", strerror(errno));
+        cleanup_and_exit(EXIT_FAILURE);
+    }
+    pthread_mutex_unlock(&file_mutex);
 }
 
 void file_append(const char* data, size_t length)
 {
     pthread_mutex_lock(&file_mutex);
-    if ((file_ptr = file_open("a")) == NULL)
-    {
-        syslog(LOG_ERR, "Unable to open "FILE_PATH", %s", strerror(errno));
-        cleanup_and_exit(EXIT_FAILURE);
-    }
     if (fwrite(data, 1, length, file_ptr) != length)
     {
         syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
@@ -55,11 +56,6 @@ void file_append(const char* data, size_t length)
 long file_read(char** buffer)
 {
     pthread_mutex_lock(&file_mutex);
-    if ((file_ptr = file_open("r")) == NULL)
-    {
-        syslog(LOG_ERR, "Unable to open "FILE_PATH" , %s", strerror(errno));
-        cleanup_and_exit(EXIT_FAILURE);
-    }
 
     // Allocate buffer for file contents
     size_t buffer_size = DEFAULT_FILE_SIZE;
@@ -98,8 +94,6 @@ long file_read(char** buffer)
         cleanup_and_exit(EXIT_FAILURE);
     }
 
-    fclose(file_ptr);
-    file_ptr = NULL;
     pthread_mutex_unlock(&file_mutex);
     return strlen(*buffer);
 }
@@ -121,7 +115,7 @@ int file_ioctl(uint32_t write_cmd, uint32_t write_cmd_offset)
     return retval;
 }
 
-void file_cleanup()
+void file_close()
 {
     pthread_mutex_lock(&file_mutex);
     if (file_ptr != NULL)
@@ -130,6 +124,11 @@ void file_cleanup()
         file_ptr = NULL;
     }
     pthread_mutex_unlock(&file_mutex);
+}
+
+void file_cleanup()
+{
+    file_close();
     pthread_mutex_destroy(&file_mutex);
     
 #ifndef USE_AESD_CHAR_DEVICE

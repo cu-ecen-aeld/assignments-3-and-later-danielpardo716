@@ -22,7 +22,9 @@ static void timer_handler(union sigval signal_value)
     strftime(time_buffer, sizeof(time_buffer), "timestamp: %a, %d %b %Y %T %z:\n", tm_info);
 
     // Append timestamp to file
+    file_open();
     file_append(time_buffer, strlen(time_buffer));
+    file_close();
 }
 
 void timer_init()

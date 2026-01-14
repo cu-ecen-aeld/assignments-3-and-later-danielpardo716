@@ -8,6 +8,8 @@
 void file_append(const char* data, size_t length);
 long file_read(char** buffer);
 int file_ioctl(uint32_t write_cmd, uint32_t write_cmd_offset);
+void file_open();
+void file_close();
 void file_cleanup();
 
 #endif
