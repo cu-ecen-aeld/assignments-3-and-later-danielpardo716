@@ -42,6 +42,13 @@ void file_open()
 void file_append(const char* data, size_t length)
 {
     pthread_mutex_lock(&file_mutex);
+    
+    if (file_ptr == NULL)
+    {
+        syslog(LOG_ERR, "File not opened for append operation");
+        cleanup_and_exit(EXIT_FAILURE);
+    }
+
     if (fwrite(data, 1, length, file_ptr) != length)
     {
         syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
@@ -56,6 +63,12 @@ void file_append(const char* data, size_t length)
 long file_read(char** buffer)
 {
     pthread_mutex_lock(&file_mutex);
+
+    if (file_ptr == NULL)
+    {
+        syslog(LOG_ERR, "File not opened for read operation");
+        cleanup_and_exit(EXIT_FAILURE);
+    }
 
     // Allocate buffer for file contents
     size_t buffer_size = DEFAULT_FILE_SIZE;
@@ -100,19 +113,28 @@ long file_read(char** buffer)
 
 int file_ioctl(uint32_t write_cmd, uint32_t write_cmd_offset)
 {
+    pthread_mutex_lock(&file_mutex);
+
+    if (file_ptr == NULL)
+    {
+        syslog(LOG_ERR, "File not opened for ioctl operation");
+        cleanup_and_exit(EXIT_FAILURE);
+    }
+    
+    int fd = fileno(file_ptr);
+    if (fd < 0)
+    {
+        syslog(LOG_ERR, "Unable to get fd for "FILE_PATH" from file_ptr: %s", strerror(errno));
+        cleanup_and_exit(EXIT_FAILURE);
+    }
+
     struct aesd_seekto seekto = {
         .write_cmd = write_cmd,
         .write_cmd_offset = write_cmd_offset
     };
-    int fd = open(FILE_PATH, O_RDWR);
-    if (fd < 0)
-    {
-        syslog(LOG_ERR, "Unable to get fd for "FILE_PATH": %s", strerror(errno));
-        cleanup_and_exit(EXIT_FAILURE);
-    }
-    int retval = ioctl(fd, AESDCHAR_IOCSEEKTO, &seekto);
-    close(fd);
-    return retval;
+    int ret = ioctl(fd, AESDCHAR_IOCSEEKTO, &seekto);
+    pthread_mutex_unlock(&file_mutex);
+    return ret;
 }
 
 void file_close()
