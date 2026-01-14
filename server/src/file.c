@@ -55,8 +55,6 @@ void file_append(const char* data, size_t length)
         cleanup_and_exit(EXIT_FAILURE);
     }
     fflush(file_ptr);
-    fclose(file_ptr);
-    file_ptr = NULL;
     pthread_mutex_unlock(&file_mutex);
 }
 
