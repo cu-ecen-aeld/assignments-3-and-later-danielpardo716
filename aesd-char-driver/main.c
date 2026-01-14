@@ -64,13 +64,16 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     struct aesd_buffer_entry* entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, (size_t)*f_pos, &entry_offset_byte);
     if (entry != NULL)
     {
-        PDEBUG("Found entry \"%s\" at offset %lld", entry->buffptr, *f_pos);
+        char* string = entry->buffptr + entry_offset_byte;
+        size_t string_size = entry->size - entry_offset_byte;
+
+        PDEBUG("Found entry \"%s\" at offset %lld", string, *f_pos);
 
         // Determine number of bytes to copy
-        size_t bytes_to_copy = min(count, entry->size);
+        size_t bytes_to_copy = min(count, string_size);
 
         // Copy to user buffer
-        if (copy_to_user(buf, entry->buffptr, bytes_to_copy) != 0)
+        if (copy_to_user(buf, string, bytes_to_copy) != 0)
         {
             retval = -EFAULT;
         }
