@@ -82,3 +82,15 @@ void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer)
 {
     memset(buffer, 0, sizeof(struct aesd_circular_buffer));
 }
+
+size_t aesd_circular_buffer_get_total_size(struct aesd_circular_buffer *buffer)
+{
+    size_t total_size = 0;
+    struct aesd_buffer_entry* entry;
+    uint8_t index;
+    AESD_CIRCULAR_BUFFER_FOREACH(entry, buffer, index)
+    {
+        total_size += entry->size;
+    }
+    return total_size;
+}

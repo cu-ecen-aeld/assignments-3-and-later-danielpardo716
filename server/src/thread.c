@@ -70,19 +70,43 @@ static void* process_data(void* arg)
 
             if (recv_buffer[i] == '\n')
             {
-                // If newline received, append to file
-                file_append(line_buffer, line_len);
-
-                // Read file and send to client
-                char* read_buffer = NULL;
-                long buffer_size = file_read(&read_buffer);
-                if (send(node->client_fd, read_buffer, buffer_size, 0) != buffer_size)
+                // Check for ioctl command
+                if (strncmp(line_buffer, FILE_IOCTL_SEEKTO_CMD, FILE_IOCTL_SEEKTO_CMD_LEN) == 0)
                 {
-                    syslog(LOG_ERR, "Failed to send any bytes: %s", strerror(errno));
-                    cleanup_and_exit(EXIT_FAILURE);
+                    uint32_t write_cmd = 0;
+                    uint32_t write_cmd_offset = 0;
+                    if (sscanf(line_buffer + FILE_IOCTL_SEEKTO_CMD_LEN, "%d,%d", &write_cmd, &write_cmd_offset) != 2)
+                    {
+                        syslog(LOG_ERR, "Failed to parse ioctl command from client: %s. Received %s", strerror(errno), line_buffer);
+                        free(line_buffer);
+                        cleanup_and_exit(EXIT_FAILURE);
+                    }
+                    if (file_ioctl(write_cmd, write_cmd_offset) != 0)
+                    {
+                        syslog(LOG_ERR, "Failed to perform ioctl command from client: %s", strerror(errno));
+                        free(line_buffer);
+                        cleanup_and_exit(EXIT_FAILURE);
+                    }
+                    goto process_data_end;
                 }
-                free(read_buffer);
-                goto process_data_end;
+                else
+                {
+                    // If newline received, append to file
+                    file_append(line_buffer, line_len);
+    
+                    // Read file and send to client
+                    char* read_buffer = NULL;
+                    long buffer_size = file_read(&read_buffer);
+                    if (send(node->client_fd, read_buffer, buffer_size, 0) != buffer_size)
+                    {
+                        syslog(LOG_ERR, "Failed to send any bytes: %s", strerror(errno));
+                        free(line_buffer);
+                        if (read_buffer != NULL) free(read_buffer);
+                        cleanup_and_exit(EXIT_FAILURE);
+                    }
+                    free(read_buffer);
+                    goto process_data_end;
+                }
             }
         }
     }

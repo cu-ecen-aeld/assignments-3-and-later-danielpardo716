@@ -1,3 +1,6 @@
+#ifndef THREAD_H
+#define THREAD_H
+
 #include <stdbool.h>
 #include <pthread.h>
 #include <sys/queue.h>
@@ -13,3 +16,5 @@ struct thread_node {
 void thread_spawn(int client_fd, char* client_ip);
 void thread_remove_all();
 void thread_cleanup_completed();
+
+#endif

@@ -8,6 +8,7 @@
 
 #include "file.h"
 #include "cleanup.h"
+#include "../../aesd-char-driver/aesd_ioctl.h"
 
 #ifdef USE_AESD_CHAR_DEVICE
     #define FILE_PATH           "/dev/aesdchar"
@@ -100,6 +101,16 @@ long file_read(char** buffer)
     file_ptr = NULL;
     pthread_mutex_unlock(&file_mutex);
     return strlen(*buffer);
+}
+
+int file_ioctl(uint32_t write_cmd, uint32_t write_cmd_offset)
+{
+    struct aesd_seekto seekto = {
+        .write_cmd = write_cmd,
+        .write_cmd_offset = write_cmd_offset
+    };
+    int fd = fileno(file_ptr);
+    return ioctl(fd, AESDCHAR_IOCSEEKTO, &seekto);
 }
 
 void file_cleanup()
