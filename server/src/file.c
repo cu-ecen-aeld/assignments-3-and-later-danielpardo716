@@ -5,6 +5,7 @@
 #include <syslog.h>
 #include <pthread.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include "file.h"
 #include "cleanup.h"
