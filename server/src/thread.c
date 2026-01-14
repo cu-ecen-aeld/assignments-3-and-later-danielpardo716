@@ -87,26 +87,25 @@ static void* process_data(void* arg)
                         free(line_buffer);
                         cleanup_and_exit(EXIT_FAILURE);
                     }
-                    goto process_data_end;
                 }
                 else
                 {
                     // If newline received, append to file
                     file_append(line_buffer, line_len);
-    
-                    // Read file and send to client
-                    char* read_buffer = NULL;
-                    long buffer_size = file_read(&read_buffer);
-                    if (send(node->client_fd, read_buffer, buffer_size, 0) != buffer_size)
-                    {
-                        syslog(LOG_ERR, "Failed to send any bytes: %s", strerror(errno));
-                        free(line_buffer);
-                        if (read_buffer != NULL) free(read_buffer);
-                        cleanup_and_exit(EXIT_FAILURE);
-                    }
-                    free(read_buffer);
-                    goto process_data_end;
                 }
+    
+                // Read file and send to client
+                char* read_buffer = NULL;
+                long buffer_size = file_read(&read_buffer);
+                if (send(node->client_fd, read_buffer, buffer_size, 0) != buffer_size)
+                {
+                    syslog(LOG_ERR, "Failed to send any bytes: %s", strerror(errno));
+                    free(line_buffer);
+                    if (read_buffer != NULL) free(read_buffer);
+                    cleanup_and_exit(EXIT_FAILURE);
+                }
+                free(read_buffer);
+                goto process_data_end;
             }
         }
     }
