@@ -145,7 +145,7 @@ loff_t aesd_llseek(struct file *filp, loff_t offset, int whence)
     struct aesd_dev* dev = filp->private_data;
     mutex_lock(&dev->mutex);
     loff_t buffer_size = (loff_t)aesd_circular_buffer_get_total_size(&dev->buffer);
-    PDEBUG("llseek to offset %lld whence %d buffer_size %lld", offset, whence, buffer_size);
+    PDEBUG("llseek to offset: %lld, whence: %d, buffer_size: %lld", offset, whence, buffer_size);
     mutex_unlock(&dev->mutex);
     return fixed_size_llseek(filp, offset, whence, buffer_size);
 }
@@ -188,10 +188,10 @@ static long aesd_adjust_file_offset(struct file* filp, unsigned int write_cmd, u
     }
     // Add the offset within the command
     new_fpos += write_cmd_offset;
-
     mutex_unlock(&dev->mutex);
     
     // Update the file position
+    PDEBUG("Setting file position from %zu to %zu (command %u offset %u)", filp->f_pos, new_fpos, write_cmd, write_cmd_offset);
     filp->f_pos = new_fpos;
     return 0;
 }

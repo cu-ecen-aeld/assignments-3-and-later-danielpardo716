@@ -73,6 +73,7 @@ static void* process_data(void* arg)
                 // Check for ioctl command
                 if (strncmp(line_buffer, FILE_IOCTL_SEEKTO_CMD, FILE_IOCTL_SEEKTO_CMD_LEN) == 0)
                 {
+                    syslog(LOG_INFO, "Received ioctl command from client: %s", line_buffer);
                     uint32_t write_cmd = 0;
                     uint32_t write_cmd_offset = 0;
                     if (sscanf(line_buffer + FILE_IOCTL_SEEKTO_CMD_LEN, "%d,%d", &write_cmd, &write_cmd_offset) != 2)
@@ -90,7 +91,7 @@ static void* process_data(void* arg)
                 }
                 else
                 {
-                    // If newline received, append to file
+                    // If received non-ioctl command string, append to file
                     file_append(line_buffer, line_len);
                 }
     
