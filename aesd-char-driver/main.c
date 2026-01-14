@@ -179,7 +179,7 @@ static long aesd_adjust_file_offset(struct file* filp, unsigned int write_cmd, u
     // Add the length of each command between the out_offs and write_cmd
     size_t entry_index = dev->buffer.out_offs;
     size_t current_cmd = 0;
-    size_t new_fpos = 0;
+    loff_t new_fpos = 0;
     while (current_cmd < write_cmd)
     {
         new_fpos += dev->buffer.entry[entry_index].size;
@@ -191,7 +191,7 @@ static long aesd_adjust_file_offset(struct file* filp, unsigned int write_cmd, u
     mutex_unlock(&dev->mutex);
     
     // Update the file position
-    PDEBUG("Setting file position from %zu to %zu (command %u offset %u)", filp->f_pos, new_fpos, write_cmd, write_cmd_offset);
+    PDEBUG("Setting file position from %lld to %lld (command %u offset %u)", filp->f_pos, new_fpos, write_cmd, write_cmd_offset);
     filp->f_pos = new_fpos;
     return 0;
 }
