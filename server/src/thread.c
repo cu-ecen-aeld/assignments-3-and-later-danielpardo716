@@ -76,14 +76,13 @@ static void* process_data(void* arg)
                     syslog(LOG_INFO, "Received ioctl command from client: %s", line_buffer);
                     uint32_t write_cmd = 0;
                     uint32_t write_cmd_offset = 0;
-                    int parsed = sscanf(line_buffer + FILE_IOCTL_SEEKTO_CMD_LEN, "%d,%d", &write_cmd, &write_cmd_offset);
-                    syslog(LOG_INFO, "Parsed ioctl command: write_cmd=%d, write_cmd_offset=%d", write_cmd, write_cmd_offset);
-                    if (parsed != 2)
+                    if (sscanf(line_buffer + FILE_IOCTL_SEEKTO_CMD_LEN, "%d,%d", &write_cmd, &write_cmd_offset); != 2)
                     {
                         syslog(LOG_ERR, "Failed to parse ioctl command from client: %s. Received %s", strerror(errno), line_buffer);
                         free(line_buffer);
                         cleanup_and_exit(EXIT_FAILURE);
                     }
+                    syslog(LOG_INFO, "Parsed ioctl command: write_cmd=%d, write_cmd_offset=%d", write_cmd, write_cmd_offset);
                     if (file_ioctl(write_cmd, write_cmd_offset) != 0)
                     {
                         syslog(LOG_ERR, "Failed to perform ioctl command from client: %s", strerror(errno));

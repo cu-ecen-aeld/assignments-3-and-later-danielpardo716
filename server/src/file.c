@@ -109,8 +109,15 @@ int file_ioctl(uint32_t write_cmd, uint32_t write_cmd_offset)
         .write_cmd = write_cmd,
         .write_cmd_offset = write_cmd_offset
     };
-    int fd = fileno(file_ptr);
-    return ioctl(fd, AESDCHAR_IOCSEEKTO, &seekto);
+    int fd = open(FILE_PATH, O_RDWR);
+    if (fd < 0)
+    {
+        syslog(LOG_ERR, "Unable to get fd for "FILE_PATH": %s", strerror(errno));
+        cleanup_and_exit(EXIT_FAILURE);
+    }
+    int retval = ioctl(fd, AESDCHAR_IOCSEEKTO, &seekto);
+    close(fd);
+    return retval;
 }
 
 void file_cleanup()
