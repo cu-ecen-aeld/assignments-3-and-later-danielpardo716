@@ -25,10 +25,14 @@ static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
 void file_open()
 {
     pthread_mutex_lock(&file_mutex);
-    int fd = open(FILE_PATH, (O_RDWR | O_APPEND | O_SYNC));
-    if (fd < 0)
+    file_fd = open(FILE_PATH, (O_RDWR | O_APPEND | O_SYNC));
+    if (file_fd < 0)
     {
         syslog(LOG_ERR, "Unable to get fd for "FILE_PATH": %s", strerror(errno));
+    }
+    else
+    {
+        syslog(LOG_INFO, "Opened file "FILE_PATH" with fd %d", file_fd);
     }
     pthread_mutex_unlock(&file_mutex);
 }
