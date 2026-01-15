@@ -19,20 +19,20 @@
 
 #define DEFAULT_FILE_SIZE   1024L
 
-static int file_fd = -1;
+static int fd = -1;
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void file_open()
 {
     pthread_mutex_lock(&file_mutex);
-    file_fd = open(FILE_PATH, (O_RDWR | O_APPEND | O_SYNC));
-    if (file_fd < 0)
+    fd = open(FILE_PATH, (O_RDWR | O_APPEND | O_SYNC));
+    if (fd < 0)
     {
         syslog(LOG_ERR, "Unable to get fd for "FILE_PATH": %s", strerror(errno));
     }
     else
     {
-        syslog(LOG_INFO, "Opened file "FILE_PATH" with fd %d", file_fd);
+        syslog(LOG_INFO, "Opened file "FILE_PATH" with fd %d", fd);
     }
     pthread_mutex_unlock(&file_mutex);
 }
@@ -40,14 +40,13 @@ void file_open()
 void file_append(const char* data, size_t length)
 {
     pthread_mutex_lock(&file_mutex);
-    
-    if (file_fd < 0)
+    if (fd < 0)
     {
         syslog(LOG_ERR, "File not opened for append operation");
         cleanup_and_exit(EXIT_FAILURE);
     }
 
-    if (write(file_fd, data, length) != length)
+    if (write(fd, data, length) != length)
     {
         syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
         cleanup_and_exit(EXIT_FAILURE);
@@ -58,8 +57,7 @@ void file_append(const char* data, size_t length)
 long file_read(char** buffer)
 {
     pthread_mutex_lock(&file_mutex);
-
-    if (file_fd < 0)
+    if (fd < 0)
     {
         syslog(LOG_ERR, "File not opened for read operation");
         cleanup_and_exit(EXIT_FAILURE);
@@ -67,21 +65,23 @@ long file_read(char** buffer)
 
     // Allocate buffer for file contents
     size_t buffer_size = DEFAULT_FILE_SIZE;
-    size_t bytes_written = 0;
     *buffer = (char*)malloc(buffer_size);
     if (*buffer == NULL)
     {
         syslog(LOG_ERR, "Failed to allocate memory for file read buffer: %s", strerror(errno));
         cleanup_and_exit(EXIT_FAILURE);
     }
-
+    
     // Read file contents into buffer line by line
-    while (read(file_fd, *buffer + bytes_written, buffer_size - bytes_written) < 0)
+    size_t bytes_read = 0;
+    size_t bytes_in_buffer = 0;
+    lseek(fd, 0, SEEK_SET); // Reset file offset to beginning
+    while ((bytes_read = read(fd, *buffer + bytes_in_buffer, buffer_size - bytes_in_buffer)) > 0)
     {
-        bytes_written = strlen(*buffer);
-        
+        bytes_in_buffer += bytes_read;
+
         // Check if we need to realloc buffer
-        if (bytes_written >= buffer_size - 1)
+        if (bytes_in_buffer >= buffer_size - 1)
         {
             buffer_size *= 2;
             char* temp = realloc(*buffer, buffer_size);
@@ -103,14 +103,13 @@ long file_read(char** buffer)
     }
 
     pthread_mutex_unlock(&file_mutex);
-    return strlen(*buffer);
+    return bytes_in_buffer;
 }
 
 int file_ioctl(uint32_t write_cmd, uint32_t write_cmd_offset)
 {
     pthread_mutex_lock(&file_mutex);
-
-    if (file_fd < 0)
+    if (fd < 0)
     {
         syslog(LOG_ERR, "File not opened for ioctl operation");
         cleanup_and_exit(EXIT_FAILURE);
@@ -120,7 +119,7 @@ int file_ioctl(uint32_t write_cmd, uint32_t write_cmd_offset)
         .write_cmd = write_cmd,
         .write_cmd_offset = write_cmd_offset
     };
-    int ret = ioctl(file_fd, AESDCHAR_IOCSEEKTO, &seekto);
+    int ret = ioctl(fd, AESDCHAR_IOCSEEKTO, &seekto);
     pthread_mutex_unlock(&file_mutex);
     return ret;
 }
@@ -128,8 +127,9 @@ int file_ioctl(uint32_t write_cmd, uint32_t write_cmd_offset)
 void file_close()
 {
     pthread_mutex_lock(&file_mutex);
-    close(file_fd);
-    file_fd = -1;
+    syslog(LOG_INFO, "Closing file "FILE_PATH" with fd %d", fd);
+    close(fd);
+    fd = -1;
     pthread_mutex_unlock(&file_mutex);
 }
 
