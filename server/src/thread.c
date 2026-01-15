@@ -85,7 +85,7 @@ static void* process_data(void* arg)
                         cleanup_and_exit(EXIT_FAILURE);
                     }
                     syslog(LOG_INFO, "Parsed ioctl command: write_cmd=%d, write_cmd_offset=%d", write_cmd, write_cmd_offset);
-                    if (file_ioctl(write_cmd, write_cmd_offset) != 0)
+                    if (file_seekto(write_cmd, write_cmd_offset) != 0)
                     {
                         syslog(LOG_ERR, "Failed to perform ioctl command from client: %s", strerror(errno));
                         free(line_buffer);
@@ -97,6 +97,12 @@ static void* process_data(void* arg)
                     // If received non-ioctl command string, append to file
                     syslog(LOG_INFO, "Appending line to file: %s", line_buffer);
                     file_append(line_buffer, line_len);
+                    if (file_seekto(0, 0) != 0)
+                    {
+                        syslog(LOG_ERR, "Failed to perform ioctl command from client: %s", strerror(errno));
+                        free(line_buffer);
+                        cleanup_and_exit(EXIT_FAILURE);
+                    }
                 }
     
                 // Read file

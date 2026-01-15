@@ -75,7 +75,6 @@ long file_read(char** buffer)
     // Read file contents into buffer line by line
     size_t bytes_read = 0;
     size_t bytes_in_buffer = 0;
-    lseek(fd, 0, SEEK_SET); // Reset file offset to beginning
     while ((bytes_read = read(fd, *buffer + bytes_in_buffer, buffer_size - bytes_in_buffer)) > 0)
     {
         bytes_in_buffer += bytes_read;
@@ -106,7 +105,7 @@ long file_read(char** buffer)
     return bytes_in_buffer;
 }
 
-int file_ioctl(uint32_t write_cmd, uint32_t write_cmd_offset)
+int file_seekto(uint32_t write_cmd, uint32_t write_cmd_offset)
 {
     pthread_mutex_lock(&file_mutex);
     if (fd < 0)
