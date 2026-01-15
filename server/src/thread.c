@@ -95,12 +95,14 @@ static void* process_data(void* arg)
                 else
                 {
                     // If received non-ioctl command string, append to file
+                    syslog(LOG_INFO, "Appending line to file: %s", line_buffer);
                     file_append(line_buffer, line_len);
                 }
     
                 // Read file
                 char* read_buffer = NULL;
                 long buffer_size = file_read(&read_buffer);
+                syslog(LOG_INFO, "Read %ld bytes from file, sending to client", buffer_size);
                 file_close();
 
                 // Send file contents back to client
