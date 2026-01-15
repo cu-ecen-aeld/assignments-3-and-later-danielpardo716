@@ -19,7 +19,7 @@
 
 #define DEFAULT_FILE_SIZE   1024L
 
-static FILE* file_ptr = NULL;
+static int file_fd = -1;
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void file_open()
@@ -30,12 +30,6 @@ void file_open()
     {
         syslog(LOG_ERR, "Unable to get fd for "FILE_PATH": %s", strerror(errno));
     }
-    file_ptr = fdopen(fd, "a+");
-    if (file_ptr == NULL)
-    {
-        syslog(LOG_ERR, "Unable to open "FILE_PATH": %s", strerror(errno));
-        cleanup_and_exit(EXIT_FAILURE);
-    }
     pthread_mutex_unlock(&file_mutex);
 }
 
@@ -43,18 +37,17 @@ void file_append(const char* data, size_t length)
 {
     pthread_mutex_lock(&file_mutex);
     
-    if (file_ptr == NULL)
+    if (file_fd < 0)
     {
         syslog(LOG_ERR, "File not opened for append operation");
         cleanup_and_exit(EXIT_FAILURE);
     }
 
-    if (fwrite(data, 1, length, file_ptr) != length)
+    if (write(file_fd, data, length) != length)
     {
         syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
         cleanup_and_exit(EXIT_FAILURE);
     }
-    fflush(file_ptr);
     pthread_mutex_unlock(&file_mutex);
 }
 
@@ -62,7 +55,7 @@ long file_read(char** buffer)
 {
     pthread_mutex_lock(&file_mutex);
 
-    if (file_ptr == NULL)
+    if (file_fd < 0)
     {
         syslog(LOG_ERR, "File not opened for read operation");
         cleanup_and_exit(EXIT_FAILURE);
@@ -79,7 +72,7 @@ long file_read(char** buffer)
     }
 
     // Read file contents into buffer line by line
-    while (fgets(*buffer + bytes_written, buffer_size - bytes_written, file_ptr) != NULL)
+    while (read(file_fd, *buffer + bytes_written, buffer_size - bytes_written) < 0)
     {
         bytes_written = strlen(*buffer);
         
@@ -113,16 +106,9 @@ int file_ioctl(uint32_t write_cmd, uint32_t write_cmd_offset)
 {
     pthread_mutex_lock(&file_mutex);
 
-    if (file_ptr == NULL)
+    if (file_fd < 0)
     {
         syslog(LOG_ERR, "File not opened for ioctl operation");
-        cleanup_and_exit(EXIT_FAILURE);
-    }
-    
-    int fd = fileno(file_ptr);
-    if (fd < 0)
-    {
-        syslog(LOG_ERR, "Unable to get fd for "FILE_PATH" from file_ptr: %s", strerror(errno));
         cleanup_and_exit(EXIT_FAILURE);
     }
 
@@ -130,7 +116,7 @@ int file_ioctl(uint32_t write_cmd, uint32_t write_cmd_offset)
         .write_cmd = write_cmd,
         .write_cmd_offset = write_cmd_offset
     };
-    int ret = ioctl(fd, AESDCHAR_IOCSEEKTO, &seekto);
+    int ret = ioctl(file_fd, AESDCHAR_IOCSEEKTO, &seekto);
     pthread_mutex_unlock(&file_mutex);
     return ret;
 }
@@ -138,11 +124,8 @@ int file_ioctl(uint32_t write_cmd, uint32_t write_cmd_offset)
 void file_close()
 {
     pthread_mutex_lock(&file_mutex);
-    if (file_ptr != NULL)
-    {
-        fclose(file_ptr);
-        file_ptr = NULL;
-    }
+    close(file_fd);
+    file_fd = -1;
     pthread_mutex_unlock(&file_mutex);
 }
 
