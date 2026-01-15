@@ -57,7 +57,10 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 {
     ssize_t retval = 0;
     struct aesd_dev* dev = filp->private_data;
-    mutex_lock(&dev->mutex);
+    if (mutex_lock_interruptible(&dev->mutex) != 0)
+    {
+        return -ERESTARTSYS;
+    }
 
     // Find the entry corresponding to f_pos
     size_t entry_offset_byte;
@@ -102,7 +105,10 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 {
     ssize_t retval = -ENOMEM;    
     struct aesd_dev* dev = filp->private_data;
-    mutex_lock(&dev->mutex);
+    if (mutex_lock_interruptible(&dev->mutex) != 0)
+    {
+        return -ERESTARTSYS;
+    }
 
     // Append data to working_entry
     dev->working_entry.buffptr = krealloc(dev->working_entry.buffptr, dev->working_entry.size + count, GFP_KERNEL);
@@ -118,9 +124,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         return -EFAULT;
     }
     dev->working_entry.size += count;
-    *f_pos += count;
-    retval = count;
-
+    
     // Check for newline characters and add to circular buffer
     if (dev->working_entry.buffptr[dev->working_entry.size - 1] == '\n')
     {
@@ -138,7 +142,9 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         dev->working_entry.buffptr = NULL;
         dev->working_entry.size = 0;
     }
-
+    *f_pos += count;
+    retval = count;
+    
     mutex_unlock(&dev->mutex);
     return retval;
 }
@@ -146,7 +152,11 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 loff_t aesd_llseek(struct file *filp, loff_t offset, int whence)
 {
     struct aesd_dev* dev = filp->private_data;
-    mutex_lock(&dev->mutex);
+    if (mutex_lock_interruptible(&dev->mutex) != 0)
+    {
+        return -ERESTARTSYS;
+    }
+
     loff_t buffer_size = (loff_t)aesd_circular_buffer_get_total_size(&dev->buffer);
     PDEBUG("llseek to offset: %lld, whence: %d, buffer_size: %lld", offset, whence, buffer_size);
     mutex_unlock(&dev->mutex);
